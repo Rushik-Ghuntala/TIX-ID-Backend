@@ -1,0 +1,125 @@
+import { ERROR_MESSAGES, HTTP_STATUS_CODE } from "../../utils/constant";
+import otpGenerator from "otp-generator";
+import { Error, Success } from "../../utils/response";
+import { User } from "../../entities/user.entity";
+import { createMailService } from "../../mail/create-mail.service";
+import { AppDataSource } from "../../config/database";
+import { Otp } from "../../entities/otp.entity";
+import { Request, Response } from "express";
+export const createOtpService = async (req: Request, res: Response) => {
+    try{
+        const {email} = req.body;
+
+        const usersRepository = AppDataSource.getRepository(User);
+
+        const existingUser = await usersRepository.findOne({where: {email}})
+
+        if(existingUser){
+            return Error(ERROR_MESSAGES.USER_ALREADY_REGISTERED, HTTP_STATUS_CODE.BAD_REQUEST);
+        }
+
+        const otpsRepository = AppDataSource.getRepository(Otp);
+
+        const newOtp = +otpGenerator.generate(6, {upperCaseAlphabets: false, specialChars: false, lowerCaseAlphabets: false});
+        const newOtpData = otpsRepository.create({
+            otp: newOtp,
+            email: email,
+            updated_at: new Date(Date.now() + 5 * 60 * 1000),
+        });
+        // console.log(newOtpData)
+
+        const savedOTP = await otpsRepository.save(newOtpData)
+
+        const sendMail = await createMailService(email, "OTP Varification", otpHtml(newOtp));
+        // console.log("sendMail: ", sendMail)
+        return Success("OTP Generated Successfully.", savedOTP);
+    } catch (err) {
+        return Error(ERROR_MESSAGES.DEFAULT);
+    }
+}
+const otpHtml = (otp: number) => {
+    return `<!DOCTYPE html>
+	<html>
+	
+	<head>
+		<meta charset="UTF-8">
+		<title>OTP Verification Email</title>
+		<style>
+			body {
+				background-color: #ffffff;
+				font-family: Arial, sans-serif;
+				font-size: 16px;
+				line-height: 1.4;
+				color: #333333;
+				margin: 0;
+				padding: 0;
+			}
+	
+			.container {
+				max-width: 600px;
+				margin: 0 auto;
+				padding: 20px;
+				text-align: center;
+			}
+	
+			.logo {
+				max-width: 200px;
+				margin-bottom: 20px;
+			}
+	
+			.message {
+				font-size: 18px;
+				font-weight: bold;
+				margin-bottom: 20px;
+			}
+	
+			.body {
+				font-size: 16px;
+				margin-bottom: 20px;
+			}
+	
+			.cta {
+				display: inline-block;
+				padding: 10px 20px;
+				background-color: #FFD60A;
+				color: #000000;
+				text-decoration: none;
+				border-radius: 5px;
+				font-size: 16px;
+				font-weight: bold;
+				margin-top: 20px;
+			}
+	
+			.support {
+				font-size: 14px;
+				color: #999999;
+				margin-top: 20px;
+			}
+	
+			.highlight {
+				font-weight: bold;
+			}
+		</style>
+	
+	</head>
+	
+	<body>
+		<div class="container">
+			<a href="https://tix-id-chi.vercel.app"><img class="logo"
+					src="https://is1-ssl.mzstatic.com/image/thumb/Purple112/v4/7d/b6/d2/7db6d2fa-a5b9-a985-00a3-5b4d718d3ee8/AppIcon-0-0-1x_U007emarketing-0-5-0-85-220.png/512x512bb.jpg" alt="TIX ID Logo"></a>
+			<div class="message">OTP Verification Email</div>
+			<div class="body">
+				<p>Dear User,</p>
+				<p>Thank you for registering with TIX ID. To complete your registration, please use the following OTP
+					(One-Time Password) to verify your account:</p>
+				<h2 class="highlight">${otp}</h2>
+				<p>This OTP is valid for 5 minutes. If you did not request this verification, please disregard this email.
+				Once your account is verified, you will have access to our platform and its features.</p>
+			</div>
+			<div class="support">If you have any questions or need assistance, please feel free to reach out to us at <a
+					href="mailto:info@tixid.com">info@tixid.com</a>. We are here to help!</div>
+		</div>
+	</body>
+	
+	</html>`;
+}
